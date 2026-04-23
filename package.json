@@ -1,0 +1,28 @@
+{
+  "name": "vkmusic-to-txt-playlist",
+  "version": "0.1.0",
+  "description": "Export VK Music playlists into TuneMyMusic-ready TXT files for Spotify import.",
+  "license": "MIT",
+  "bin": {
+    "vkmusic-to-txt-playlist": "./src/cli.js"
+  },
+  "scripts": {
+    "export": "node src/cli.js export",
+    "validate": "node src/cli.js validate",
+    "split": "node src/cli.js split"
+  },
+  "dependencies": {
+    "playwright": "^1.59.1"
+  },
+  "keywords": [
+    "vk",
+    "vk-music",
+    "spotify",
+    "tunemymusic",
+    "playlist",
+    "playwright"
+  ],
+  "engines": {
+    "node": ">=20"
+  }
+}
