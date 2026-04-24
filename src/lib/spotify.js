@@ -151,6 +151,7 @@ async function spotifyRequest({
   headers = {},
   body,
   retries = 3,
+  maxRetryAfterSeconds = 60,
 }) {
   const response = await fetch(url, {
     method,
@@ -167,6 +168,15 @@ async function spotifyRequest({
 
   if (response.status === 429 && retries > 0) {
     const retryAfter = Number(response.headers.get("retry-after") || "1");
+    if (retryAfter > maxRetryAfterSeconds) {
+      throw new Error(
+        `Spotify API rate limit hit for ${url}. Retry-After is ${retryAfter} seconds, which is too long to wait automatically.`
+      );
+    }
+
+    process.stdout.write(
+      `Spotify rate limit hit. Waiting ${retryAfter} seconds before retrying ${url}\n`
+    );
     await delay(retryAfter * 1000);
     return spotifyRequest({
       method,
@@ -175,6 +185,7 @@ async function spotifyRequest({
       headers,
       body,
       retries: retries - 1,
+      maxRetryAfterSeconds,
     });
   }
 
@@ -407,7 +418,10 @@ async function saveLikedTracks(accessToken, uris) {
     chunks.push(uris.slice(index, index + 40));
   }
 
-  for (const chunk of chunks) {
+  for (const [index, chunk] of chunks.entries()) {
+    process.stdout.write(
+      `Saving chunk ${index + 1}/${chunks.length} to Spotify Liked Songs (${chunk.length} tracks)\n`
+    );
     const url = new URL("https://api.spotify.com/v1/me/library");
     url.searchParams.set("uris", chunk.join(","));
     await spotifyRequest({
@@ -468,11 +482,19 @@ async function syncLikedSongs({
     });
   }
 
+  process.stdout.write(
+    `Matching finished. Matched ${matched.length}, unmatched ${unmatched.length}.\n`
+  );
+
   if (!dryRun) {
+    process.stdout.write("Starting Spotify save step...\n");
     await saveLikedTracks(
       accessToken,
       matched.map((item) => item.uri)
     );
+    process.stdout.write("Spotify save step completed.\n");
+  } else {
+    process.stdout.write("Dry run enabled. Nothing will be added to Spotify.\n");
   }
 
   const finalReportPath =

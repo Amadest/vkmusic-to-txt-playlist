@@ -10,6 +10,7 @@ const {
   writePlaylistFile,
 } = require("./lib/files");
 const { getVkExportSnippet } = require("./lib/snippet");
+const { getSpotifyLikeSnippet } = require("./lib/spotify-snippet");
 
 function parseArgs(argv) {
   const args = { _: [] };
@@ -80,6 +81,7 @@ Commands:
   split      --path <file> [--max-lines <number>] [--out-dir <path>]
   liked-sync --path <file> --spotify-client-id <id> [--redirect-uri <uri>] [--report <path>] [--market <code>] [--limit <number>] [--dry-run] [--force-auth]
   snippet
+  spotify-like-snippet
 `);
 }
 
@@ -236,6 +238,10 @@ function runSnippet() {
   process.stdout.write(`${getVkExportSnippet()}\n`);
 }
 
+function runSpotifyLikeSnippet() {
+  process.stdout.write(`${getSpotifyLikeSnippet()}\n`);
+}
+
 async function runLikedSync(args) {
   const { syncLikedSongs, DEFAULT_REDIRECT_URI } = require("./lib/spotify");
   const filePath = path.resolve(
@@ -307,6 +313,11 @@ async function main() {
 
   if (command === "snippet") {
     runSnippet();
+    return;
+  }
+
+  if (command === "spotify-like-snippet") {
+    runSpotifyLikeSnippet();
     return;
   }
 

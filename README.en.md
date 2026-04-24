@@ -1,11 +1,13 @@
 # vkmusic-to-txt-playlist
 
-Tool for exporting music from VK Music and moving it into Spotify.
+Tool for exporting music from VK Music into TXT and preparing it for Spotify transfer.
 
-It supports two clear flows:
+The current practical workflow is:
 
-- export VK playlists and `My Music` into `Artist - Title` TXT files
-- import those TXT files directly into Spotify `Liked Songs`
+- export a playlist or `My Music` from VK into TXT
+- split large TXT files into 500-track chunks if needed
+- import those chunks through TuneMyMusic
+- then finish the last Spotify actions locally in the browser
 
 Russian version: [README.md](README.md)
 
@@ -14,10 +16,9 @@ Russian version: [README.md](README.md)
 - exports regular VK playlists by URL
 - exports `My Music` via the special `my-music` target
 - supports attach mode for an already opened Chrome/Edge session
-- has a fallback `F12 -> Console` snippet flow
+- has a fallback `F12 -> Console` flow
 - validates TXT files
 - splits large TXT files into 500-line chunks
-- searches Spotify and adds matches into `Liked Songs`
 
 ## Pick a flow
 
@@ -83,19 +84,7 @@ What this means in practice:
 - in the `F12` flow, you can see the code and run it yourself in your own browser
 - in the CLI flow, the browser still runs on your device and simply walks through the visible track list
 
-Spotify is also handled through your own app:
-
-- you create your own app in the Spotify Developer Dashboard
-- you use your own `Client ID`
-- authorization goes through `localhost`:
-
-```text
-http://127.0.0.1:43821/spotify/callback
-```
-
-- tokens are stored locally in `.session/spotify.json`
-
-If you want to avoid browser automation entirely, use the `F12 -> Console` export flow and open the Spotify OAuth URL from the terminal manually.
+If you want zero browser automation from the tool, use the `F12 -> Console` flow.
 
 ## Working with TXT files
 
@@ -111,46 +100,16 @@ Split a large TXT file:
 npm run split -- --path "./playlists/My Music.txt" --max-lines 500
 ```
 
-## Spotify `Liked Songs`
+## Current Spotify path
 
-This is a one-way additive import:
+The recommended flow right now is:
 
-- the TXT file is read line by line
-- each track is searched through Spotify Web API
-- matched tracks are added into `Liked Songs`
-- existing likes are not removed
+1. Export `My Music` or a regular playlist from VK into TXT.
+2. Split the file into 500-line chunks if needed.
+3. Import those chunks through TuneMyMusic.
+4. Finish the last step locally in Spotify Web: for example, walk imported playlists and add tracks into `Liked Songs`.
 
-### One-time setup
-
-1. Create an app in the Spotify Developer Dashboard.
-2. Copy its `Client ID`.
-3. Add this redirect URI:
-
-```text
-http://127.0.0.1:43821/spotify/callback
-```
-
-### Safe dry-run
-
-```bash
-npm run liked-sync -- --path "./playlists/My Music.txt" --spotify-client-id "YOUR_SPOTIFY_CLIENT_ID" --dry-run --limit 20
-```
-
-### Real import into `Liked Songs`
-
-```bash
-npm run liked-sync -- --path "./playlists/My Music.txt" --spotify-client-id "YOUR_SPOTIFY_CLIENT_ID"
-```
-
-### If Spotify OAuth does not open automatically
-
-The command prints:
-
-```text
-Open Spotify authorization if it does not start automatically:
-```
-
-If no browser window opens, copy the printed URL and open it manually.
+This project deliberately does not present Spotify Web API sync as the main flow right now, because Spotify search rate limits are too restrictive for large libraries.
 
 ## Commands
 
@@ -171,23 +130,6 @@ Options:
 - `--attach`: connect to an already opened Chrome/Edge at `http://127.0.0.1:9222`
 - `--attach-url`: custom remote debugging endpoint
 - `--headless`: run without a visible window
-
-### `liked-sync`
-
-```bash
-npm run liked-sync -- --path "./playlists/My Music.txt" --spotify-client-id "YOUR_SPOTIFY_CLIENT_ID"
-```
-
-Options:
-
-- `--path`: TXT file in `Artist - Title` format
-- `--spotify-client-id`: Spotify app client id
-- `--redirect-uri`: OAuth redirect URI
-- `--report`: custom JSON report path
-- `--market`: Spotify Search market such as `US`
-- `--limit`: process only part of the file for a test run
-- `--dry-run`: search and report only, without saving to the library
-- `--force-auth`: force a new Spotify OAuth flow
 
 ### `validate`
 
@@ -222,17 +164,14 @@ Important notes:
 - `F12 -> Console` is the most portable flow across operating systems
 - attach mode works only with Chromium browsers such as Chrome and Edge
 - Firefox is better used via managed session or `snippet`
-- automatic Spotify OAuth opening depends on the local OS and browser setup
 
 ## Limitations
 
 - VK changes markup from time to time, so parser updates may be needed
 - on `My Music`, VK may show only the visible part of the library and hide the rest behind a subscription prompt
-- Spotify search will not guarantee a 100% match rate, so always review the JSON report in `reports/`
+- the free TuneMyMusic flow usually implies a 500-track limit per transfer
 
 ## Sources
 
-- Spotify PKCE Flow:
-  https://developer.spotify.com/documentation/web-api/tutorials/code-pkce-flow
-- Spotify Save Items to Library:
-  https://developer.spotify.com/documentation/web-api/reference/save-library-items
+- TuneMyMusic:
+  https://www.tunemymusic.com/transfer/text-file-to-spotify
