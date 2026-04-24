@@ -19,6 +19,23 @@ function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function resolveVkTarget(target) {
+  const value = (target || "").trim();
+  const normalized = value.toLowerCase();
+
+  if (
+    normalized === "my-music" ||
+    normalized === "mymusic" ||
+    normalized === "mine" ||
+    normalized === "liked" ||
+    normalized === "library"
+  ) {
+    return "https://vk.com/music?section=all";
+  }
+
+  return value;
+}
+
 async function waitForPlaylistPage(page, browserName) {
   process.stdout.write(
     `Waiting for VK playlist tracks in ${browserName}. Log into VK in the opened browser window if needed...\n`
@@ -65,12 +82,12 @@ async function loadFullPlaylist(page) {
           const titleLink = row.querySelector("[data-testid='MusicTrackRow_Title']");
           const title = clean(
             titleLink?.textContent ||
-            row.querySelector("[class*='vkitAudioRowInfo__header']")?.textContent ||
-            ""
+              row.querySelector("[class*='vkitAudioRowInfo__header']")?.textContent ||
+              ""
           );
           const artist = clean(
             row.querySelector("span[class*='vkitAudioRowInfo__text']")?.textContent ||
-            ""
+              ""
           );
 
           if (!artist || !title) {
@@ -91,10 +108,12 @@ async function loadFullPlaylist(page) {
       return [...document.querySelectorAll(".audio_row__performer_title")]
         .map((row) => {
           const artist = clean(
-            row.querySelector(".audio_row__performers, .audio_row__performer")?.textContent || ""
+            row.querySelector(".audio_row__performers, .audio_row__performer")
+              ?.textContent || ""
           );
           const title = clean(
-            row.querySelector(".audio_row__title, ._audio_row__title a")?.textContent || ""
+            row.querySelector(".audio_row__title, ._audio_row__title a")
+              ?.textContent || ""
           );
 
           if (!artist || !title) {
@@ -111,30 +130,51 @@ async function loadFullPlaylist(page) {
 
     function getExpectedTrackCount() {
       const header = document.querySelector("[data-testid='MusicPlaylistTracks_Header']");
-      const text = clean(header?.textContent || "");
-      const match = text.match(/\d+/);
-      return match ? Number(match[0]) : null;
+      const directText = clean(header?.textContent || "");
+      const directMatch = directText.match(/\d+/);
+      if (directMatch) {
+        return Number(directMatch[0]);
+      }
+
+      const bodyMatch = clean(document.body.innerText || "").match(
+        /(\d+)\s+(?:\u0430\u0443\u0434\u0438\u043e\u0437\u0430\u043f\u0438\u0441(?:\u0435\u0439|\u044c)|tracks?)/i
+      );
+      return bodyMatch ? Number(bodyMatch[1]) : null;
+    }
+
+    function isPotentialExpandButton(button) {
+      const text = clean(button.textContent || "").toLowerCase();
+      const testId = (button.getAttribute("data-testid") || "").toLowerCase();
+      const className =
+        typeof button.className === "string"
+          ? button.className.toLowerCase()
+          : "";
+
+      return (
+        testId.includes("expand") ||
+        className.includes("actionbutton--all") ||
+        text.includes("\u043f\u043e\u043a\u0430\u0437\u0430\u0442\u044c") ||
+        text.includes("\u0435\u0449\u0451") ||
+        text.includes("\u0435\u0449\u0435") ||
+        text.includes("show all") ||
+        text.includes("more") ||
+        text.includes("expand")
+      );
     }
 
     async function expandPlaylistIfNeeded() {
-      const expandButton = document.querySelector(
-        [
-          "[data-testid='audiolistitems-expandbutton']",
-          ".ActionButton--all",
-          "[class*='vkuiCellButton__host'][role='button']",
-        ].join(", ")
-      );
+      const buttons = [
+        ...document.querySelectorAll(
+          [
+            "[data-testid='audiolistitems-expandbutton']",
+            ".ActionButton--all",
+            "[class*='vkuiCellButton__host'][role='button']",
+          ].join(", ")
+        ),
+      ];
+      const expandButton = buttons.find(isPotentialExpandButton);
 
       if (!expandButton) {
-        return false;
-      }
-
-      const text = (expandButton.textContent || "")
-        .replace(/[\s\n ]+/g, " ")
-        .trim()
-        .toLowerCase();
-
-      if (text && !text.includes("показать все")) {
         return false;
       }
 
@@ -277,6 +317,37 @@ async function getPlaylistTitle(page) {
   });
 }
 
+async function getExportWarning(page, playlistTitle, trackCount) {
+  return page.evaluate(
+    ({ currentTitle, currentTrackCount }) => {
+      const clean = (value) => (value || "").replace(/[\s\n ]+/g, " ").trim();
+      const bodyText = clean(document.body.innerText || "");
+      const expectedMatch = bodyText.match(
+        /(\d+)\s+(?:\u0430\u0443\u0434\u0438\u043e\u0437\u0430\u043f\u0438\u0441(?:\u0435\u0439|\u044c)|tracks?)/i
+      );
+      const expectedCount = expectedMatch ? Number(expectedMatch[1]) : null;
+      const hasSubscriptionPrompt =
+        bodyText.includes("\u041f\u043e\u0434\u043f\u0438\u0448\u0438\u0442\u0435\u0441\u044c") ||
+        bodyText.includes("\u0431\u0435\u0437 \u043e\u0433\u0440\u0430\u043d\u0438\u0447\u0435\u043d\u0438\u0439");
+
+      if (
+        currentTitle === "\u041c\u043e\u044f \u043c\u0443\u0437\u044b\u043a\u0430" &&
+        hasSubscriptionPrompt &&
+        expectedCount &&
+        currentTrackCount < expectedCount
+      ) {
+        return `VK currently exposes only ${currentTrackCount} of ${expectedCount} tracks on the My Music page. The rest appears to be blocked behind a VK Music subscription prompt.`;
+      }
+
+      return null;
+    },
+    {
+      currentTitle: playlistTitle,
+      currentTrackCount: trackCount,
+    }
+  );
+}
+
 function buildOutputPath(outPath, playlistTitle) {
   return (
     outPath ||
@@ -294,7 +365,9 @@ async function exportFromPage({
   outPath,
   browserLabel,
 }) {
-  await page.goto(playlistUrl, {
+  const targetUrl = resolveVkTarget(playlistUrl);
+
+  await page.goto(targetUrl, {
     waitUntil: "domcontentloaded",
     timeout: 60000,
   });
@@ -311,6 +384,7 @@ async function exportFromPage({
 
   const finalOutPath = buildOutputPath(outPath, playlistTitle);
   writePlaylistFile(finalOutPath, tracks);
+  const warning = await getExportWarning(page, playlistTitle, tracks.length);
 
   return {
     browser: browserLabel,
@@ -318,6 +392,7 @@ async function exportFromPage({
     playlistTitle,
     trackCount: tracks.length,
     sample: tracks.slice(0, 5),
+    warning,
   };
 }
 
@@ -381,4 +456,5 @@ async function exportVkPlaylistAttached({
 module.exports = {
   exportVkPlaylistAttached,
   exportVkPlaylist,
+  resolveVkTarget,
 };

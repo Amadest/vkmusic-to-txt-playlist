@@ -22,12 +22,12 @@ function getVkExportSnippet() {
           const titleLink = row.querySelector("[data-testid='MusicTrackRow_Title']");
           const title = clean(
             titleLink?.textContent ||
-            row.querySelector("[class*='vkitAudioRowInfo__header']")?.textContent ||
-            ""
+              row.querySelector("[class*='vkitAudioRowInfo__header']")?.textContent ||
+              ""
           );
           const artist = clean(
             row.querySelector("span[class*='vkitAudioRowInfo__text']")?.textContent ||
-            ""
+              ""
           );
 
           if (!artist || !title) {
@@ -36,7 +36,7 @@ function getVkExportSnippet() {
 
           return {
             key: titleLink?.getAttribute("href") || artist + " - " + title,
-            line: artist + " - " + title
+            line: artist + " - " + title,
           };
         })
         .filter(Boolean);
@@ -60,7 +60,7 @@ function getVkExportSnippet() {
 
           return {
             key: artist + " - " + title,
-            line: artist + " - " + title
+            line: artist + " - " + title,
           };
         })
         .filter(Boolean);
@@ -68,26 +68,49 @@ function getVkExportSnippet() {
 
     function getExpectedTrackCount() {
       const header = document.querySelector("[data-testid='MusicPlaylistTracks_Header']");
-      const text = clean(header?.textContent || "");
-      const match = text.match(/\d+/);
-      return match ? Number(match[0]) : null;
+      const directText = clean(header?.textContent || "");
+      const directMatch = directText.match(/\\d+/);
+      if (directMatch) {
+        return Number(directMatch[0]);
+      }
+
+      const bodyMatch = clean(document.body.innerText || "").match(
+        /(\\d+)\\s+(?:\\u0430\\u0443\\u0434\\u0438\\u043e\\u0437\\u0430\\u043f\\u0438\\u0441(?:\\u0435\\u0439|\\u044c)|tracks?)/i
+      );
+      return bodyMatch ? Number(bodyMatch[1]) : null;
+    }
+
+    function isPotentialExpandButton(button) {
+      const text = clean(button.textContent || "").toLowerCase();
+      const testId = (button.getAttribute("data-testid") || "").toLowerCase();
+      const className =
+        typeof button.className === "string" ? button.className.toLowerCase() : "";
+
+      return (
+        testId.includes("expand") ||
+        className.includes("actionbutton--all") ||
+        text.includes("\\u043f\\u043e\\u043a\\u0430\\u0437\\u0430\\u0442\\u044c") ||
+        text.includes("\\u0435\\u0449\\u0451") ||
+        text.includes("\\u0435\\u0449\\u0435") ||
+        text.includes("show all") ||
+        text.includes("more") ||
+        text.includes("expand")
+      );
     }
 
     async function expandPlaylistIfNeeded() {
-      const expandButton = document.querySelector(
-        [
-          "[data-testid='audiolistitems-expandbutton']",
-          ".ActionButton--all",
-          "[class*='vkuiCellButton__host'][role='button']"
-        ].join(", ")
-      );
+      const buttons = [
+        ...document.querySelectorAll(
+          [
+            "[data-testid='audiolistitems-expandbutton']",
+            ".ActionButton--all",
+            "[class*='vkuiCellButton__host'][role='button']",
+          ].join(", ")
+        ),
+      ];
+      const expandButton = buttons.find(isPotentialExpandButton);
 
       if (!expandButton) {
-        return false;
-      }
-
-      const text = clean(expandButton.textContent || "").toLowerCase();
-      if (text && !text.includes("показать все")) {
         return false;
       }
 
@@ -98,6 +121,7 @@ function getVkExportSnippet() {
 
     const expectedTrackCount = getExpectedTrackCount();
     const collectedTracks = [];
+
     const appendVisibleTracks = () => {
       const visibleTracks = extractCurrentRows();
       if (visibleTracks.length === 0) {

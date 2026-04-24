@@ -75,9 +75,10 @@ function printUsage() {
   process.stdout.write(`vkmusic-to-txt-playlist
 
 Commands:
-  export   --playlist <url> [--browser <chrome|edge|firefox>] [--attach] [--attach-url <url>] [--out <path>] [--profile-dir <path>] [--executable-path <path>] [--headless]
+  export      --playlist <url|my-music> [--browser <chrome|edge|firefox>] [--attach] [--attach-url <url>] [--out <path>] [--profile-dir <path>] [--executable-path <path>] [--headless]
   validate --path <file>
-  split    --path <file> [--max-lines <number>] [--out-dir <path>]
+  split      --path <file> [--max-lines <number>] [--out-dir <path>]
+  liked-sync --path <file> --spotify-client-id <id> [--redirect-uri <uri>] [--report <path>] [--market <code>] [--limit <number>] [--dry-run] [--force-auth]
   snippet
 `);
 }
@@ -155,6 +156,7 @@ async function runExport(args) {
         trackCount: result.trackCount,
         outPath: result.outPath,
         sample: result.sample,
+        warning: result.warning,
       },
       null,
       2
@@ -234,6 +236,42 @@ function runSnippet() {
   process.stdout.write(`${getVkExportSnippet()}\n`);
 }
 
+async function runLikedSync(args) {
+  const { syncLikedSongs, DEFAULT_REDIRECT_URI } = require("./lib/spotify");
+  const filePath = path.resolve(
+    getConfigValue(args, "path") || args._[0] || (() => {
+      throw new Error("Missing --path <file>");
+    })()
+  );
+  const clientId =
+    getConfigValue(args, "spotify-client-id") ||
+    getConfigValue(args, "client-id") ||
+    process.env.SPOTIFY_CLIENT_ID;
+
+  if (!clientId) {
+    throw new Error(
+      "Missing --spotify-client-id <id>. You can also set SPOTIFY_CLIENT_ID."
+    );
+  }
+
+  const result = await syncLikedSongs({
+    filePath,
+    clientId,
+    redirectUri: getConfigValue(args, "redirect-uri", DEFAULT_REDIRECT_URI),
+    reportPath: getConfigValue(args, "report")
+      ? path.resolve(getConfigValue(args, "report"))
+      : undefined,
+    market: getConfigValue(args, "market"),
+    limit: getConfigValue(args, "limit")
+      ? Number(getConfigValue(args, "limit"))
+      : undefined,
+    dryRun: Boolean(getConfigValue(args, "dry-run", false)),
+    forceAuth: Boolean(getConfigValue(args, "force-auth", false)),
+  });
+
+  process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+}
+
 async function main() {
   const [command, ...rest] = process.argv.slice(2);
 
@@ -259,6 +297,11 @@ async function main() {
 
   if (command === "split") {
     runSplit(args);
+    return;
+  }
+
+  if (command === "liked-sync") {
+    await runLikedSync(args);
     return;
   }
 

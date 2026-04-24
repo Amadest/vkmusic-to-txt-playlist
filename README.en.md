@@ -1,24 +1,65 @@
 # vkmusic-to-txt-playlist
 
-Export VK Music playlists into TuneMyMusic-ready TXT files for Spotify import.
+Tool for exporting music from VK Music and moving it into Spotify.
 
-The tool opens a supported browser, waits for VK authentication if needed, loads the full playlist, and saves tracks in the `Artist - Title` format accepted by TuneMyMusic.
+It supports two clear flows:
 
-## Features
+- export VK playlists and `My Music` into `Artist - Title` TXT files
+- import those TXT files directly into Spotify `Liked Songs`
 
-- exports VK playlists to plain TXT
-- supports `chrome`, `edge`, and `firefox`
-- keeps separate managed sessions in `.session/<browser>`
-- can attach to an already opened Chrome/Edge session via remote debugging
-- supports current VK Music page layouts
-- validates exported files before import
-- splits playlists larger than 500 tracks for TuneMyMusic free transfers
+Russian version: [README.md](README.md)
 
-## Requirements
+## What it does
 
-- Node.js 20+
-- one of: Google Chrome, Microsoft Edge, or Firefox
-- a VK account with access to the playlist
+- exports regular VK playlists by URL
+- exports `My Music` via the special `my-music` target
+- supports attach mode for an already opened Chrome/Edge session
+- has a fallback `F12 -> Console` snippet flow
+- validates TXT files
+- splits large TXT files into 500-line chunks
+- searches Spotify and adds matches into `Liked Songs`
+
+## Pick a flow
+
+### Option 1. CLI + browser
+
+Best when you want a “give it a link -> get a TXT file” workflow.
+
+Regular playlist:
+
+```bash
+npm run export -- --playlist "https://vk.com/music/playlist/123_456_hash"
+```
+
+`My Music`:
+
+```bash
+npm run export -- --playlist my-music
+```
+
+If Chrome/Edge is already open with the correct VK session:
+
+```bash
+npm run export -- --browser=chrome --attach --playlist="my-music"
+```
+
+### Option 2. `F12 -> Console`
+
+Best when you do not want attach mode, browser profiles, or extra automation.
+
+1. Open the target VK page.
+2. Print the snippet:
+
+```bash
+node src/cli.js snippet
+```
+
+3. Open `F12 -> Console`.
+4. If the browser asks, type `allow pasting`.
+5. Paste the snippet and press `Enter`.
+6. Wait for the TXT download.
+
+This flow was verified on Windows and used to produce `playlists/My Music.txt`.
 
 ## Install
 
@@ -26,72 +67,127 @@ The tool opens a supported browser, waits for VK authentication if needed, loads
 npm install
 ```
 
-## Quick start
+## Security
 
-Export a playlist:
+The whole workflow is local.
 
-```bash
-npm run export -- --playlist "https://vk.com/music/playlist/123_456_hash"
+- VK export runs on your own machine
+- the tool either opens a local browser context on your device or you run the local JS snippet yourself via `F12 -> Console`
+- attach mode connects only to a browser already running on your machine
+- managed sessions are stored locally in `.session/`
+- exported TXT files are saved locally inside the project
+
+What this means in practice:
+
+- you do not need to hand over your VK login or password to the tool or to a third-party service
+- in the `F12` flow, you can see the code and run it yourself in your own browser
+- in the CLI flow, the browser still runs on your device and simply walks through the visible track list
+
+Spotify is also handled through your own app:
+
+- you create your own app in the Spotify Developer Dashboard
+- you use your own `Client ID`
+- authorization goes through `localhost`:
+
+```text
+http://127.0.0.1:43821/spotify/callback
 ```
 
-Choose a browser:
+- tokens are stored locally in `.session/spotify.json`
+
+If you want to avoid browser automation entirely, use the `F12 -> Console` export flow and open the Spotify OAuth URL from the terminal manually.
+
+## Working with TXT files
+
+Validate a TXT file:
 
 ```bash
-npm run export -- --playlist "https://vk.com/music/playlist/123_456_hash" --browser firefox
+npm run validate -- --path "./playlists/My Music.txt"
 ```
 
-Use an already opened Chrome or Edge session:
+Split a large TXT file:
 
 ```bash
-npm run export -- --browser=chrome --attach --playlist="https://vk.com/music/playlist/123_456_hash"
+npm run split -- --path "./playlists/My Music.txt" --max-lines 500
 ```
 
-Validate the exported file:
+## Spotify `Liked Songs`
+
+This is a one-way additive import:
+
+- the TXT file is read line by line
+- each track is searched through Spotify Web API
+- matched tracks are added into `Liked Songs`
+- existing likes are not removed
+
+### One-time setup
+
+1. Create an app in the Spotify Developer Dashboard.
+2. Copy its `Client ID`.
+3. Add this redirect URI:
+
+```text
+http://127.0.0.1:43821/spotify/callback
+```
+
+### Safe dry-run
 
 ```bash
-npm run validate -- --path "./playlists/My Playlist.txt"
+npm run liked-sync -- --path "./playlists/My Music.txt" --spotify-client-id "YOUR_SPOTIFY_CLIENT_ID" --dry-run --limit 20
 ```
 
-Split a large playlist into 500-track chunks:
+### Real import into `Liked Songs`
 
 ```bash
-npm run split -- --path "./playlists/My Playlist.txt" --max-lines 500
+npm run liked-sync -- --path "./playlists/My Music.txt" --spotify-client-id "YOUR_SPOTIFY_CLIENT_ID"
 ```
 
-Then upload the TXT file to TuneMyMusic:
+### If Spotify OAuth does not open automatically
 
-1. Open `https://www.tunemymusic.com/transfer/text-file-to-spotify`
-2. Choose `Text file`
-3. Upload the exported TXT file
-4. Select Spotify as destination
-5. Complete authorization and run the transfer
+The command prints:
+
+```text
+Open Spotify authorization if it does not start automatically:
+```
+
+If no browser window opens, copy the printed URL and open it manually.
 
 ## Commands
 
 ### `export`
 
 ```bash
-npm run export -- --playlist "https://vk.com/music/playlist/123_456_hash" [--browser chrome] [--out "./playlists/custom.txt"] [--profile-dir "./.session/chrome"] [--executable-path "/path/to/browser"] [--attach] [--attach-url "http://127.0.0.1:9222"] [--headless]
+npm run export -- --playlist "https://vk.com/music/playlist/123_456_hash"
+npm run export -- --playlist "my-music"
 ```
 
 Options:
 
-- `--playlist`: VK playlist URL
-- `--browser`: browser to use: `chrome`, `edge`, or `firefox`
-- `--out`: optional output path
-- `--profile-dir`: optional browser session directory
-- `--executable-path`: browser binary path if auto-detection does not find it
+- `--playlist`: VK playlist URL or the special `my-music` target
+- `--browser`: `chrome`, `edge`, or `firefox`
+- `--out`: output TXT path
+- `--profile-dir`: managed session directory
+- `--executable-path`: browser binary path
 - `--attach`: connect to an already opened Chrome/Edge at `http://127.0.0.1:9222`
 - `--attach-url`: custom remote debugging endpoint
-- `--headless`: run without showing Chrome if the saved session is already authenticated
+- `--headless`: run without a visible window
 
-### `snippet`
+### `liked-sync`
 
 ```bash
-node src/cli.js snippet
+npm run liked-sync -- --path "./playlists/My Music.txt" --spotify-client-id "YOUR_SPOTIFY_CLIENT_ID"
 ```
 
-Prints the current JS snippet for `F12 -> Console`. This is the fallback path when automation is not suitable.
+Options:
+
+- `--path`: TXT file in `Artist - Title` format
+- `--spotify-client-id`: Spotify app client id
+- `--redirect-uri`: OAuth redirect URI
+- `--report`: custom JSON report path
+- `--market`: Spotify Search market such as `US`
+- `--limit`: process only part of the file for a test run
+- `--dry-run`: search and report only, without saving to the library
+- `--force-auth`: force a new Spotify OAuth flow
 
 ### `validate`
 
@@ -105,10 +201,38 @@ npm run validate -- --path "./playlists/My Playlist.txt"
 npm run split -- --path "./playlists/My Playlist.txt" --max-lines 500
 ```
 
-## Notes
+### `snippet`
 
-- VK can change markup at any time, so parser maintenance may occasionally be needed.
-- Each browser uses its own managed session in `.session/` instead of attaching to a live user profile.
-- `--attach` is supported only for Chromium browsers such as Chrome and Edge. For Firefox, use managed session or the snippet fallback.
-- TuneMyMusic free transfers are limited to 500 tracks per run.
-- Some tracks may still require manual cleanup for the best Spotify match rate.
+```bash
+node src/cli.js snippet
+```
+
+Prints the current JS snippet for `F12 -> Console`.
+
+## Platforms
+
+Current status:
+
+- Windows: main tested workflow, verified in practice
+- macOS: supported in code, not smoke-tested in this session
+- Linux: supported in code, not smoke-tested in this session
+
+Important notes:
+
+- `F12 -> Console` is the most portable flow across operating systems
+- attach mode works only with Chromium browsers such as Chrome and Edge
+- Firefox is better used via managed session or `snippet`
+- automatic Spotify OAuth opening depends on the local OS and browser setup
+
+## Limitations
+
+- VK changes markup from time to time, so parser updates may be needed
+- on `My Music`, VK may show only the visible part of the library and hide the rest behind a subscription prompt
+- Spotify search will not guarantee a 100% match rate, so always review the JSON report in `reports/`
+
+## Sources
+
+- Spotify PKCE Flow:
+  https://developer.spotify.com/documentation/web-api/tutorials/code-pkce-flow
+- Spotify Save Items to Library:
+  https://developer.spotify.com/documentation/web-api/reference/save-library-items

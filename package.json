@@ -8,6 +8,7 @@
   },
   "scripts": {
     "export": "node src/cli.js export",
+    "liked-sync": "node src/cli.js liked-sync",
     "validate": "node src/cli.js validate",
     "split": "node src/cli.js split"
   },
