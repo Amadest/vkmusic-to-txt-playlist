@@ -8,7 +8,14 @@ const { URL } = require("node:url");
 const { ensureDirectory, readPlaylistFile } = require("./files");
 
 const DEFAULT_REDIRECT_URI = "http://127.0.0.1:43821/spotify/callback";
-const DEFAULT_SCOPES = ["user-library-modify"];
+const DEFAULT_SCOPES = [
+  "user-library-modify",
+  "user-library-read",
+  "playlist-read-private",
+  "playlist-read-collaborative",
+  "playlist-modify-private",
+  "playlist-modify-public",
+];
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -25,6 +32,20 @@ function parseTrackLine(line) {
     artist: line.slice(0, separatorIndex).trim(),
     title: line.slice(separatorIndex + 3).trim(),
   };
+}
+
+function getSpotifyPlaylistId(value) {
+  if (!value) {
+    return "";
+  }
+
+  if (/^[A-Za-z0-9]{10,}$/.test(value)) {
+    return value;
+  }
+
+  const parsedUrl = new URL(value);
+  const match = parsedUrl.pathname.match(/\/playlist\/([^/?#]+)/);
+  return match ? match[1] : "";
 }
 
 function normalizeForCompare(value) {
@@ -317,20 +338,26 @@ async function authorizeSpotify({
     existingSession.clientId === clientId &&
     existingSession.refreshToken
   ) {
-    const refreshed = await refreshAccessToken({
-      clientId,
-      refreshToken: existingSession.refreshToken,
-    });
-    const updatedSession = {
-      clientId,
-      accessToken: refreshed.access_token,
-      refreshToken: refreshed.refresh_token || existingSession.refreshToken,
-      expiresAt: Date.now() + refreshed.expires_in * 1000,
-      scope: refreshed.scope || DEFAULT_SCOPES.join(" "),
-      redirectUri,
-    };
-    writeAuthSession(sessionPath, updatedSession);
-    return updatedSession.accessToken;
+    try {
+      const refreshed = await refreshAccessToken({
+        clientId,
+        refreshToken: existingSession.refreshToken,
+      });
+      const updatedSession = {
+        clientId,
+        accessToken: refreshed.access_token,
+        refreshToken: refreshed.refresh_token || existingSession.refreshToken,
+        expiresAt: Date.now() + refreshed.expires_in * 1000,
+        scope: refreshed.scope || DEFAULT_SCOPES.join(" "),
+        redirectUri,
+      };
+      writeAuthSession(sessionPath, updatedSession);
+      return updatedSession.accessToken;
+    } catch (error) {
+      process.stdout.write(
+        `Stored Spotify session could not be refreshed: ${error.message}\nStarting a new Spotify authorization flow.\n`
+      );
+    }
   }
 
   const { verifier, challenge } = createPkcePair();
@@ -412,24 +439,159 @@ async function searchTrack(accessToken, track, market) {
   return best && best.score >= 45 ? best : null;
 }
 
-async function saveLikedTracks(accessToken, uris) {
+async function saveLikedTracks(accessToken, ids) {
   const chunks = [];
-  for (let index = 0; index < uris.length; index += 40) {
-    chunks.push(uris.slice(index, index + 40));
+  for (let index = 0; index < ids.length; index += 50) {
+    chunks.push(ids.slice(index, index + 50));
   }
 
   for (const [index, chunk] of chunks.entries()) {
     process.stdout.write(
       `Saving chunk ${index + 1}/${chunks.length} to Spotify Liked Songs (${chunk.length} tracks)\n`
     );
-    const url = new URL("https://api.spotify.com/v1/me/library");
-    url.searchParams.set("uris", chunk.join(","));
     await spotifyRequest({
       method: "PUT",
+      url: "https://api.spotify.com/v1/me/tracks",
+      accessToken,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: chunk }),
+    });
+  }
+}
+
+async function deletePlaylistTracks(accessToken, playlistId, trackUris) {
+  const chunks = [];
+  for (let index = 0; index < trackUris.length; index += 100) {
+    chunks.push(trackUris.slice(index, index + 100));
+  }
+
+  for (const chunk of chunks) {
+    await spotifyRequest({
+      method: "DELETE",
+      url: `https://api.spotify.com/v1/playlists/${playlistId}/tracks`,
+      accessToken,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tracks: chunk.map((uri) => ({ uri })) }),
+    });
+  }
+}
+
+async function getPlaylistTracks(accessToken, playlistId, limit) {
+  const tracks = [];
+  let url = new URL(`https://api.spotify.com/v1/playlists/${playlistId}/tracks`);
+  url.searchParams.set("limit", "100");
+  url.searchParams.set("fields", "next,items(track(uri,id,name,artists(name),external_urls(spotify)))");
+
+  while (url && (!limit || tracks.length < limit)) {
+    const response = await spotifyRequest({
       url: url.toString(),
       accessToken,
     });
+
+    for (const item of response?.items || []) {
+      const track = item.track;
+      if (!track?.uri || !track.uri.startsWith("spotify:track:")) {
+        continue;
+      }
+
+      tracks.push({
+        uri: track.uri,
+        id: track.id,
+        title: track.name,
+        artists: (track.artists || []).map((artist) => artist.name),
+        url: track.external_urls?.spotify || "",
+      });
+
+      if (limit && tracks.length >= limit) {
+        break;
+      }
+    }
+
+    url = response?.next ? new URL(response.next) : null;
   }
+
+  const unique = [];
+  const seen = new Set();
+  for (const track of tracks) {
+    if (seen.has(track.uri)) {
+      continue;
+    }
+
+    seen.add(track.uri);
+    unique.push(track);
+  }
+
+  return unique;
+}
+
+async function syncLikedSongsFromPlaylist({
+  playlistUrl,
+  clientId,
+  redirectUri = DEFAULT_REDIRECT_URI,
+  sessionPath = path.resolve(process.cwd(), ".session", "spotify.json"),
+  reportPath,
+  dryRun = false,
+  forceAuth = false,
+  limit,
+}) {
+  const playlistId = getSpotifyPlaylistId(playlistUrl);
+  if (!playlistId) {
+    throw new Error("Missing or invalid --playlist <spotify playlist url|id>.");
+  }
+
+  const accessToken = await authorizeSpotify({
+    clientId,
+    redirectUri,
+    sessionPath,
+    forceAuth,
+  });
+
+  process.stdout.write(`Reading Spotify playlist: ${playlistId}\n`);
+  const tracks = await getPlaylistTracks(accessToken, playlistId, limit);
+  process.stdout.write(`Playlist tracks collected: ${tracks.length}\n`);
+
+  if (!dryRun) {
+    process.stdout.write("Starting Spotify save step...\n");
+    await saveLikedTracks(
+      accessToken,
+      tracks.map((track) => track.id)
+    );
+    process.stdout.write("Spotify save step completed.\n");
+  } else {
+    process.stdout.write("Dry run enabled. Nothing will be added to Spotify.\n");
+  }
+
+  const finalReportPath =
+    reportPath ||
+    path.resolve(
+      process.cwd(),
+      "reports",
+      `spotify-playlist-liked-sync-${Date.now()}.json`
+    );
+  ensureDirectory(path.dirname(finalReportPath));
+  fs.writeFileSync(
+    finalReportPath,
+    JSON.stringify(
+      {
+        playlistId,
+        playlistUrl,
+        dryRun,
+        processedTracks: tracks.length,
+        tracks,
+      },
+      null,
+      2
+    ) + "\n",
+    "utf8"
+  );
+
+  return {
+    playlistId,
+    dryRun,
+    processedTracks: tracks.length,
+    reportPath: finalReportPath,
+    sample: tracks.slice(0, 5),
+  };
 }
 
 async function syncLikedSongs({
@@ -474,6 +636,7 @@ async function syncLikedSongs({
 
     matched.push({
       source: track.line,
+      id: match.item.id,
       uri: match.item.uri,
       title: match.item.name,
       artists: (match.item.artists || []).map((artist) => artist.name),
@@ -490,7 +653,7 @@ async function syncLikedSongs({
     process.stdout.write("Starting Spotify save step...\n");
     await saveLikedTracks(
       accessToken,
-      matched.map((item) => item.uri)
+      matched.map((item) => item.id)
     );
     process.stdout.write("Spotify save step completed.\n");
   } else {
@@ -538,5 +701,8 @@ async function syncLikedSongs({
 
 module.exports = {
   DEFAULT_REDIRECT_URI,
+  authorizeSpotify,
+  deletePlaylistTracks,
   syncLikedSongs,
+  syncLikedSongsFromPlaylist,
 };

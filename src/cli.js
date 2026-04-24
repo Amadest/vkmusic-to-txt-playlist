@@ -80,8 +80,11 @@ Commands:
   validate --path <file>
   split      --path <file> [--max-lines <number>] [--out-dir <path>]
   liked-sync --path <file> --spotify-client-id <id> [--redirect-uri <uri>] [--report <path>] [--market <code>] [--limit <number>] [--dry-run] [--force-auth]
+  liked-sync-playlist --playlist <spotify-url|id> --spotify-client-id <id> [--redirect-uri <uri>] [--report <path>] [--limit <number>] [--dry-run] [--force-auth]
   snippet
   spotify-like-snippet
+  spotify-like-attach [--attach-url <url>] [--max-new-likes <number>] [--retry-per-row <number>] [--report <path>] [--retry-skipped] [--remove-from-playlist]
+  spotify-like-attach-retry --from-report <path> [--attach-url <url>] [--max-new-likes <number>] [--retry-per-row <number>] [--report <path>] [--remove-from-playlist]
 `);
 }
 
@@ -242,6 +245,32 @@ function runSpotifyLikeSnippet() {
   process.stdout.write(`${getSpotifyLikeSnippet()}\n`);
 }
 
+async function runSpotifyLikeAttach(args) {
+  const { likeTracksInOpenSpotifyPlaylist, readSkippedTrackKeys } = require("./lib/spotify-web");
+  const sourceReportPath = getConfigValue(args, "from-report")
+    ? path.resolve(getConfigValue(args, "from-report"))
+    : undefined;
+  const result = await likeTracksInOpenSpotifyPlaylist({
+    attachUrl: getConfigValue(args, "attach-url", "http://127.0.0.1:9222"),
+    maxNewLikes: getConfigValue(args, "max-new-likes")
+      ? Number(getConfigValue(args, "max-new-likes"))
+      : Infinity,
+    retryPerRow: getConfigValue(args, "retry-per-row")
+      ? Number(getConfigValue(args, "retry-per-row"))
+      : 5,
+    reportPath: getConfigValue(args, "report")
+      ? path.resolve(getConfigValue(args, "report"))
+      : undefined,
+    onlyTrackKeys: sourceReportPath
+      ? readSkippedTrackKeys(sourceReportPath)
+      : null,
+    retrySkippedInSameRun: Boolean(getConfigValue(args, "retry-skipped", false)),
+    removeFromPlaylist: Boolean(getConfigValue(args, "remove-from-playlist", false)),
+  });
+
+  process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+}
+
 async function runLikedSync(args) {
   const { syncLikedSongs, DEFAULT_REDIRECT_URI } = require("./lib/spotify");
   const filePath = path.resolve(
@@ -268,6 +297,42 @@ async function runLikedSync(args) {
       ? path.resolve(getConfigValue(args, "report"))
       : undefined,
     market: getConfigValue(args, "market"),
+    limit: getConfigValue(args, "limit")
+      ? Number(getConfigValue(args, "limit"))
+      : undefined,
+    dryRun: Boolean(getConfigValue(args, "dry-run", false)),
+    forceAuth: Boolean(getConfigValue(args, "force-auth", false)),
+  });
+
+  process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+}
+
+async function runLikedSyncPlaylist(args) {
+  const { syncLikedSongsFromPlaylist, DEFAULT_REDIRECT_URI } = require("./lib/spotify");
+  const playlistUrl =
+    getConfigValue(args, "playlist") ||
+    args._[0] ||
+    (() => {
+      throw new Error("Missing --playlist <spotify-url|id>");
+    })();
+  const clientId =
+    getConfigValue(args, "spotify-client-id") ||
+    getConfigValue(args, "client-id") ||
+    process.env.SPOTIFY_CLIENT_ID;
+
+  if (!clientId) {
+    throw new Error(
+      "Missing --spotify-client-id <id>. You can also set SPOTIFY_CLIENT_ID."
+    );
+  }
+
+  const result = await syncLikedSongsFromPlaylist({
+    playlistUrl,
+    clientId,
+    redirectUri: getConfigValue(args, "redirect-uri", DEFAULT_REDIRECT_URI),
+    reportPath: getConfigValue(args, "report")
+      ? path.resolve(getConfigValue(args, "report"))
+      : undefined,
     limit: getConfigValue(args, "limit")
       ? Number(getConfigValue(args, "limit"))
       : undefined,
@@ -311,6 +376,11 @@ async function main() {
     return;
   }
 
+  if (command === "liked-sync-playlist") {
+    await runLikedSyncPlaylist(args);
+    return;
+  }
+
   if (command === "snippet") {
     runSnippet();
     return;
@@ -318,6 +388,16 @@ async function main() {
 
   if (command === "spotify-like-snippet") {
     runSpotifyLikeSnippet();
+    return;
+  }
+
+  if (command === "spotify-like-attach") {
+    await runSpotifyLikeAttach(args);
+    return;
+  }
+
+  if (command === "spotify-like-attach-retry") {
+    await runSpotifyLikeAttach(args);
     return;
   }
 
