@@ -1,85 +1,201 @@
 # vkmusic-yandexmusic-to-txt-playlist
 
-Tool for exporting music from VK Music into TXT and preparing it for Spotify transfer.
-
-The current practical workflow is:
-
-- export a playlist or `My Music` from VK into TXT
-- split large TXT files into 500-track chunks if needed
-- import those chunks through TuneMyMusic
-- then finish the last Spotify actions locally in the browser
+Tool for moving music from VK Music and Yandex Music through TXT playlists, with a local browser helper for finishing Spotify `Liked Songs` transfers.
 
 Russian version: [README.md](README.md)
 
-## What it does
+## Table of Contents
 
-- exports regular VK playlists by URL
-- exports `My Music` via the special `my-music` target
-- exports Yandex Music playlists into the same TXT format
-- supports attach mode for an already opened Chrome/Edge session
-- has a fallback `F12 -> Console` flow
-- validates TXT files
-- splits large TXT files into 500-line chunks
+- [How It Works](#how-it-works)
+- [Export From VK](#export-from-vk)
+- [Export From Yandex Music](#export-from-yandex-music)
+- [Spotify: Finish Liked Songs](#spotify-finish-liked-songs)
+- [Install](#install)
+- [Quick Start](#quick-start)
+- [Commands](#commands)
+- [Reports](#reports)
+- [Security](#security)
+- [Platforms](#platforms)
+- [Limitations](#limitations)
 
-## Pick a flow
+## How It Works
 
-### Option 1. CLI + browser
+A normal cross-service music transfer looks like this:
 
-Best when you want a “give it a link -> get a TXT file” workflow.
+1. Export tracks from the source service into a TXT file in `Artist - Title` format.
+2. If the file is large, split it into 500-line chunks.
+3. Upload those TXT files to TuneMyMusic:
+   [tunemymusic.com/transfer/text-file-to-spotify](https://www.tunemymusic.com/transfer/text-file-to-spotify)
+4. Get regular playlists on the target platform.
+5. If you specifically need Spotify `Liked Songs`, run the separate browser script: it walks through the imported playlist, likes every track, and can remove processed tracks from the playlist.
 
-Regular playlist:
+Why this shape:
+
+- regular playlists transfer between services fairly well
+- liked/favorite tracks often transfer poorly or not directly at all
+- so favorites are first converted into a normal playlist
+- then Spotify is finished locally through browser automation
+
+## Export From VK
+
+### Simple Run
+
+1. Open PowerShell in the project folder.
+2. For a regular playlist, paste its URL and run:
 
 ```bash
-npm run export -- --playlist "https://vk.com/music/playlist/123_456_hash"
+npm run export -- --playlist "VK_PLAYLIST_URL"
 ```
 
-`My Music`:
+3. For `My Music`, run:
 
 ```bash
 npm run export -- --playlist my-music
 ```
 
-Yandex Music playlist:
+4. If a browser opens and asks you to log in, sign in to VK.
+5. The resulting TXT file appears in `playlists/`.
+
+### What It Exports
+
+VK has two main sources:
+
+- regular playlists by URL
+- the `My Music` section
+
+The output is a TXT file that can be uploaded to TuneMyMusic and transferred to another service in chunks of up to 500 lines.
+
+### Available Modes
+
+There are two VK flows:
+
+- CLI mode: the tool opens a browser, waits for login if needed, and collects tracks
+- `F12 -> Console`: the tool prints a snippet that you paste manually into DevTools on the VK page
+
+CLI:
 
 ```bash
-npm run yandex-export -- --playlist "https://music.yandex.ru/playlists/d74828f2-0c96-7b70-ca4c-0e1a156a33e1"
+npm run export -- --playlist "https://vk.com/music/playlist/123_456_hash"
+npm run export -- --playlist my-music
 ```
 
-Yandex Music: for `Liked` tracks, make the `Liked` playlist public first, then export it by URL like a normal playlist:
-
-```bash
-npm run yandex-export -- --playlist "https://music.yandex.ru/playlists/lk...." --split --max-lines 500
-```
-
-If Chrome/Edge is already open with the correct VK session:
-
-```bash
-npm run export -- --browser=chrome --attach --playlist="my-music"
-```
-
-### Option 2. `F12 -> Console`
-
-Best when you do not want attach mode, browser profiles, or extra automation.
-
-1. Open the target VK page.
-2. Print the snippet:
+Manual snippet:
 
 ```bash
 node src/cli.js snippet
 ```
 
-For Yandex Music:
+If Chrome blocks pasting into DevTools, type this first:
+
+```text
+allow pasting
+```
+
+Then:
+
+1. Get the TXT file in `playlists/`.
+2. Split it if needed.
+3. Upload the chunks to TuneMyMusic.
+
+Split example:
+
+```bash
+npm run split -- --path "./playlists/My Music.txt" --max-lines 500
+```
+
+## Export From Yandex Music
+
+### Simple Run
+
+1. Make the target playlist public.
+2. Copy its public URL.
+3. Run:
+
+```bash
+npm run yandex-export -- --playlist "YANDEX_MUSIC_PLAYLIST_URL"
+```
+
+4. If the file is large and you want 500-line chunks immediately:
+
+```bash
+npm run yandex-export -- --playlist "YANDEX_MUSIC_PLAYLIST_URL" --split --max-lines 500
+```
+
+5. The full TXT appears in `playlists/`, and chunks appear in `split/`.
+
+### Regular Playlists
+
+For public Yandex Music playlists, authorization is not needed. The tool can open a clean browser session without your profile, cookies, or private data and collect tracks from the public URL.
+
+```bash
+npm run yandex-export -- --playlist "https://music.yandex.ru/playlists/..."
+```
+
+### `Liked` Playlist
+
+For Yandex Music `Liked` tracks, the simplest approach is to make that playlist public and export it as a normal playlist by URL.
+
+Flow:
+
+1. Make the `Liked` playlist public in Yandex Music.
+2. Copy its public URL, usually shaped like `https://music.yandex.ru/playlists/lk....`.
+3. Export it as a normal playlist.
+4. Split into 500-line chunks if needed.
+
+```bash
+npm run yandex-export -- --playlist "https://music.yandex.ru/playlists/lk...." --split --max-lines 500
+```
+
+Manual snippet:
 
 ```bash
 node src/cli.js yandex-snippet
 ```
 
-3. Open `F12 -> Console`.
-4. If the browser asks, type `allow pasting`.
-5. Paste the snippet and press `Enter`.
-6. Wait for the TXT download.
+## Spotify: Finish Liked Songs
 
-This flow was verified on Windows and used to produce `playlists/My Music.txt`.
+### Simple Run
+
+1. Open Chrome with remote debugging:
+
+```bash
+& "C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222
+```
+
+2. In that Chrome window, open the Spotify playlist you want to process.
+3. Run:
+
+```bash
+node src/cli.js spotify-like-attach --remove-from-playlist
+```
+
+4. The script walks the playlist, likes tracks, and removes processed tracks when `--remove-from-playlist` is enabled.
+5. At the end, the tracks are in Spotify `Liked Songs`.
+
+### Why This Script Exists
+
+This is a practical workaround for moving favorites into Spotify.
+
+Third-party services usually transfer regular playlists well, but they do not always transfer `Liked Songs` correctly. The working flow is:
+
+1. Export favorites from the source service as a regular playlist.
+2. Move that playlist to Spotify through TuneMyMusic.
+3. Open the imported Spotify playlist.
+4. Run the local browser script.
+5. The script likes every track and can remove it from the playlist after liking.
+
+Result:
+
+- the temporary playlist gradually shrinks
+- tracks end up in `Liked Songs`
+- the script does not need to fight a huge virtual-scroll playlist forever
+
+### What It Can Do
+
+- like tracks from the currently opened Spotify playlist
+- remove tracks from the playlist after liking
+- save a JSON report
+- retry skipped tracks from a previous report
 
 ## Install
 
@@ -87,49 +203,22 @@ This flow was verified on Windows and used to produce `playlists/My Music.txt`.
 npm install
 ```
 
-## Security
+## Quick Start
 
-The whole workflow is local.
+### VK -> Spotify
 
-- VK export runs on your own machine
-- the tool either opens a local browser context on your device or you run the local JS snippet yourself via `F12 -> Console`
-- attach mode connects only to a browser already running on your machine
-- managed sessions are stored locally in `.session/`
-- exported TXT files are saved locally inside the project
+1. Export a VK playlist or `My Music` into TXT.
+2. Split the TXT into 500-line chunks if needed.
+3. Import chunks through TuneMyMusic.
+4. If this was meant to become Spotify favorites, open the imported playlist in Spotify and run `spotify-like-attach --remove-from-playlist`.
 
-What this means in practice:
+### Yandex Music -> Spotify
 
-- you do not need to hand over your VK login or password to the tool or to a third-party service
-- in the `F12` flow, you can see the code and run it yourself in your own browser
-- in the CLI flow, the browser still runs on your device and simply walks through the visible track list
-
-If you want zero browser automation from the tool, use the `F12 -> Console` flow.
-
-## Working with TXT files
-
-Validate a TXT file:
-
-```bash
-npm run validate -- --path "./playlists/My Music.txt"
-```
-
-Split a large TXT file:
-
-```bash
-npm run split -- --path "./playlists/My Music.txt" --max-lines 500
-```
-
-## Current Spotify path
-
-The recommended flow right now is:
-
-1. Export `My Music` or a regular playlist from VK into TXT.
-   You can also export Yandex Music playlists by URL with `yandex-export`.
-2. Split the file into 500-line chunks if needed.
-3. Import those chunks through TuneMyMusic.
-4. Finish the last step locally in Spotify Web: for example, walk imported playlists and add tracks into `Liked Songs`.
-
-This project deliberately does not present Spotify Web API sync as the main flow right now, because Spotify search rate limits are too restrictive for large libraries.
+1. Export a Yandex Music playlist into TXT.
+2. For `Liked`, first make the Yandex Music `Liked` playlist public.
+3. Split the TXT into 500-line chunks if needed.
+4. Import chunks through TuneMyMusic.
+5. If this should become Spotify favorites, run `spotify-like-attach --remove-from-playlist`.
 
 ## Commands
 
@@ -137,39 +226,19 @@ This project deliberately does not present Spotify Web API sync as the main flow
 
 ```bash
 npm run export -- --playlist "https://vk.com/music/playlist/123_456_hash"
-npm run export -- --playlist "my-music"
+npm run export -- --playlist my-music
 ```
 
 Options:
 
 - `--playlist`: VK playlist URL or the special `my-music` target
 - `--browser`: `chrome`, `edge`, or `firefox`
-- `--out`: output TXT path
+- `--out`: TXT output path
 - `--profile-dir`: managed session directory
 - `--executable-path`: browser binary path
-- `--attach`: connect to an already opened Chrome/Edge at `http://127.0.0.1:9222`
+- `--attach`: connect to an already opened Chrome/Edge through `http://127.0.0.1:9222`
 - `--attach-url`: custom remote debugging endpoint
-- `--headless`: run without a visible window
-
-### `validate`
-
-```bash
-npm run validate -- --path "./playlists/My Playlist.txt"
-```
-
-### `split`
-
-```bash
-npm run split -- --path "./playlists/My Playlist.txt" --max-lines 500
-```
-
-### `snippet`
-
-```bash
-node src/cli.js snippet
-```
-
-Prints the current JS snippet for `F12 -> Console`.
+- `--headless`: run without a visible browser window
 
 ### `yandex-export`
 
@@ -182,15 +251,39 @@ Options:
 
 - `--playlist`: Yandex Music playlist URL
 - `--browser`: `chrome`, `edge`, or `firefox`
-- `--out`: output TXT path
-- `--attach`: connect to an already opened Chrome/Edge at `http://127.0.0.1:9222`
+- `--out`: TXT output path
+- `--attach`: connect to an already opened Chrome/Edge through `http://127.0.0.1:9222`
 - `--attach-url`: custom remote debugging endpoint
 - `--split`: also write chunked TXT files
 - `--max-lines`: chunk size for `--split`, defaults to 500
-- `--split-out-dir`: custom output directory for chunks
+- `--split-out-dir`: custom chunk output directory
 - `--profile-dir`: managed session directory
 - `--executable-path`: browser binary path
-- `--headless`: run without a visible window
+- `--headless`: run without a visible browser window
+
+### `validate`
+
+```bash
+npm run validate -- --path "./playlists/My Music.txt"
+```
+
+Checks TXT formatting and prints statistics.
+
+### `split`
+
+```bash
+npm run split -- --path "./playlists/My Music.txt" --max-lines 500
+```
+
+Splits a large TXT file into chunks. The default chunk size is 500 lines.
+
+### `snippet`
+
+```bash
+node src/cli.js snippet
+```
+
+Prints the JS snippet for manual `F12 -> Console` export on a VK page.
 
 ### `yandex-snippet`
 
@@ -198,35 +291,99 @@ Options:
 node src/cli.js yandex-snippet
 ```
 
-Prints the JS snippet for manual export through `F12 -> Console` on a Yandex Music playlist page.
+Prints the JS snippet for manual `F12 -> Console` export on a Yandex Music playlist page.
 
-For `Liked` tracks, the simplest workflow is:
+### `spotify-like-snippet`
 
-1. Make the `Liked` playlist public in Yandex Music.
-2. Open that public playlist URL.
-3. Export it with `yandex-export` or `yandex-snippet` just like any other playlist.
+```bash
+node src/cli.js spotify-like-snippet
+```
+
+Prints a JS snippet for liking tracks manually from the Spotify console.
+
+### `spotify-like-attach`
+
+```bash
+node src/cli.js spotify-like-attach [options]
+```
+
+Connects to an already opened Chrome instance and likes tracks from the currently opened Spotify playlist.
+
+Options:
+
+- `--attach-url`: remote debugging endpoint, defaults to `http://127.0.0.1:9222`
+- `--remove-from-playlist`: remove a track from the playlist after liking it
+- `--max-new-likes`: limit new likes per run
+- `--retry-per-row`: attempts per track, defaults to 5
+- `--retry-skipped`: retry skipped tracks at the end of the same run
+- `--report`: JSON report path
+
+### `spotify-like-attach-retry`
+
+```bash
+node src/cli.js spotify-like-attach-retry --from-report <path> [options]
+```
+
+Retries only tracks with `menu-not-found` status from a previous report.
+
+### `liked-sync`
+
+```bash
+node src/cli.js liked-sync --path "./playlists/My Music.txt" --spotify-client-id <id>
+```
+
+Spotify API based sync. It is slower and hits rate limits more easily, so the browser workflow is the main practical path for large libraries.
+
+### `liked-sync-playlist`
+
+```bash
+node src/cli.js liked-sync-playlist --playlist <spotify-url|id> --spotify-client-id <id>
+```
+
+Same Spotify API approach, but it reads tracks directly from a Spotify playlist.
+
+## Reports
+
+`spotify-like-attach` saves JSON reports in `reports/`.
+
+Each entry includes:
+
+- `key`: Spotify track ID
+- `label`: row text as shown in the UI
+- `status`: `liked`, `already-liked`, `action-not-found`, or `menu-not-found`
+
+You can retry skipped tracks with `spotify-like-attach-retry`.
+
+## Security
+
+The whole workflow is local:
+
+- VK and Yandex Music export runs on your device
+- attach mode connects only to a browser already running locally
+- managed sessions are stored locally in `.session/`
+- TXT files and reports are saved locally in the project
+- this tool does not send your logins or passwords to any third-party service
+
+For public Yandex Music playlists, you do not need to log in at all. A clean browser session can open the public URL and collect TXT data without using your account.
 
 ## Platforms
 
-Current status:
-
-- Windows: main tested workflow, verified in practice
-- macOS: supported in code, not smoke-tested in this session
-- Linux: supported in code, not smoke-tested in this session
+| OS      | Status |
+| ------- | ------ |
+| Windows | main tested workflow |
+| macOS   | supported in code |
+| Linux   | supported in code |
 
 Important notes:
 
-- `F12 -> Console` is the most portable flow across operating systems
+- `F12 -> Console` is portable across operating systems
 - attach mode works only with Chromium browsers such as Chrome and Edge
-- Firefox is better used via managed session or `snippet`
+- Firefox is better used through managed session mode or `snippet`
 
 ## Limitations
 
 - VK changes markup from time to time, so parser updates may be needed
-- on `My Music`, VK may show only the visible part of the library and hide the rest behind a subscription prompt
-- the free TuneMyMusic flow usually implies a 500-track limit per transfer
-
-## Sources
-
-- TuneMyMusic:
-  https://www.tunemymusic.com/transfer/text-file-to-spotify
+- for VK `My Music`, VK may show only the visible part of the library behind a subscription prompt
+- for Yandex Music `Liked`, using a public playlist URL is the simplest path
+- free TuneMyMusic transfers usually imply a 500-track limit per transfer
+- Spotify API development mode has strict rate limits and is not ideal for large libraries
