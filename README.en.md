@@ -15,6 +15,7 @@ Russian version: [README.md](README.md)
 
 - exports regular VK playlists by URL
 - exports `My Music` via the special `my-music` target
+- exports Yandex Music playlists into the same TXT format
 - supports attach mode for an already opened Chrome/Edge session
 - has a fallback `F12 -> Console` flow
 - validates TXT files
@@ -38,6 +39,18 @@ npm run export -- --playlist "https://vk.com/music/playlist/123_456_hash"
 npm run export -- --playlist my-music
 ```
 
+Yandex Music playlist:
+
+```bash
+npm run yandex-export -- --playlist "https://music.yandex.ru/playlists/d74828f2-0c96-7b70-ca4c-0e1a156a33e1"
+```
+
+Yandex Music: for `Liked` tracks, make the `Liked` playlist public first, then export it by URL like a normal playlist:
+
+```bash
+npm run yandex-export -- --playlist "https://music.yandex.ru/playlists/lk...." --split --max-lines 500
+```
+
 If Chrome/Edge is already open with the correct VK session:
 
 ```bash
@@ -53,6 +66,12 @@ Best when you do not want attach mode, browser profiles, or extra automation.
 
 ```bash
 node src/cli.js snippet
+```
+
+For Yandex Music:
+
+```bash
+node src/cli.js yandex-snippet
 ```
 
 3. Open `F12 -> Console`.
@@ -105,6 +124,7 @@ npm run split -- --path "./playlists/My Music.txt" --max-lines 500
 The recommended flow right now is:
 
 1. Export `My Music` or a regular playlist from VK into TXT.
+   You can also export Yandex Music playlists by URL with `yandex-export`.
 2. Split the file into 500-line chunks if needed.
 3. Import those chunks through TuneMyMusic.
 4. Finish the last step locally in Spotify Web: for example, walk imported playlists and add tracks into `Liked Songs`.
@@ -150,6 +170,41 @@ node src/cli.js snippet
 ```
 
 Prints the current JS snippet for `F12 -> Console`.
+
+### `yandex-export`
+
+```bash
+npm run yandex-export -- --playlist "https://music.yandex.ru/playlists/..."
+npm run yandex-export -- --playlist "https://music.yandex.ru/playlists/lk...." --split --max-lines 500
+```
+
+Options:
+
+- `--playlist`: Yandex Music playlist URL
+- `--browser`: `chrome`, `edge`, or `firefox`
+- `--out`: output TXT path
+- `--attach`: connect to an already opened Chrome/Edge at `http://127.0.0.1:9222`
+- `--attach-url`: custom remote debugging endpoint
+- `--split`: also write chunked TXT files
+- `--max-lines`: chunk size for `--split`, defaults to 500
+- `--split-out-dir`: custom output directory for chunks
+- `--profile-dir`: managed session directory
+- `--executable-path`: browser binary path
+- `--headless`: run without a visible window
+
+### `yandex-snippet`
+
+```bash
+node src/cli.js yandex-snippet
+```
+
+Prints the JS snippet for manual export through `F12 -> Console` on a Yandex Music playlist page.
+
+For `Liked` tracks, the simplest workflow is:
+
+1. Make the `Liked` playlist public in Yandex Music.
+2. Open that public playlist URL.
+3. Export it with `yandex-export` or `yandex-snippet` just like any other playlist.
 
 ## Platforms
 

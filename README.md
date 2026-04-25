@@ -224,3 +224,29 @@ node src/cli.js liked-sync-playlist --playlist <spotify-url|id> --spotify-client
 - для `Моя музыка` VK может показывать только видимую часть библиотеки за подпиской
 - бесплатный TuneMyMusic — лимит 500 треков за перенос
 - Spotify API в режиме разработки имеет жёсткий rate limit на поиск и может отдавать 403 на некоторые эндпоинты (Extended Quota Mode)
+
+## Яндекс.Музыка
+
+Экспорт обычного плейлиста:
+
+```bash
+npm run yandex-export -- --playlist "https://music.yandex.ru/playlists/..."
+```
+
+Для `Мне нравится` проще всего сделать этот плейлист публичным и выгружать как обычный плейлист по ссылке:
+
+```bash
+npm run yandex-export -- --playlist "https://music.yandex.ru/playlists/lk...." --split --max-lines 500
+```
+
+Тогда это работает тем же способом, что и тестовый плейлист:
+
+```bash
+npm run yandex-export -- --playlist "https://music.yandex.ru/playlists/lk...." --split --max-lines 500
+```
+
+Ручной вариант через `F12 -> Console`:
+
+```bash
+node src/cli.js yandex-snippet
+```

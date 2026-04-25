@@ -11,6 +11,7 @@ const {
 } = require("./lib/files");
 const { getVkExportSnippet } = require("./lib/snippet");
 const { getSpotifyLikeSnippet } = require("./lib/spotify-snippet");
+const { getYandexMusicExportSnippet } = require("./lib/yandex-snippet");
 
 function parseArgs(argv) {
   const args = { _: [] };
@@ -72,20 +73,124 @@ function getRequiredArg(args, key, message) {
   return value;
 }
 
+function getStringConfigValue(args, key) {
+  const value = getConfigValue(args, key);
+  return isBooleanLikeConfigValue(value) ? undefined : value;
+}
+
 function printUsage() {
   process.stdout.write(`vkmusic-to-txt-playlist
 
 Commands:
   export      --playlist <url|my-music> [--browser <chrome|edge|firefox>] [--attach] [--attach-url <url>] [--out <path>] [--profile-dir <path>] [--executable-path <path>] [--headless]
+  yandex-export --playlist <url> [--browser <chrome|edge|firefox>] [--attach] [--attach-url <url>] [--out <path>] [--split] [--max-lines <number>] [--split-out-dir <path>] [--profile-dir <path>] [--executable-path <path>] [--headless]
   validate --path <file>
   split      --path <file> [--max-lines <number>] [--out-dir <path>]
   liked-sync --path <file> --spotify-client-id <id> [--redirect-uri <uri>] [--report <path>] [--market <code>] [--limit <number>] [--dry-run] [--force-auth]
   liked-sync-playlist --playlist <spotify-url|id> --spotify-client-id <id> [--redirect-uri <uri>] [--report <path>] [--limit <number>] [--dry-run] [--force-auth]
   snippet
+  yandex-snippet
   spotify-like-snippet
   spotify-like-attach [--attach-url <url>] [--max-new-likes <number>] [--retry-per-row <number>] [--report <path>] [--retry-skipped] [--remove-from-playlist]
   spotify-like-attach-retry --from-report <path> [--attach-url <url>] [--max-new-likes <number>] [--retry-per-row <number>] [--report <path>] [--remove-from-playlist]
 `);
+}
+
+async function runYandexExport(args) {
+  const { normalizeBrowserName } = require("./lib/browser");
+  const {
+    exportYandexMusicPlaylist,
+    exportYandexMusicPlaylistAttached,
+  } = require("./lib/yandex");
+  const rawBrowserValue = getConfigValue(args, "browser");
+  const playlistUrl =
+    getStringConfigValue(args, "playlist") ||
+    args._[0];
+  if (!playlistUrl) {
+    throw new Error("Missing --playlist <url>");
+  }
+
+  if (isBooleanLikeConfigValue(rawBrowserValue)) {
+    throw new Error(
+      'PowerShell/npm lost the value for --browser. Use `--browser=firefox` or run `node src/cli.js yandex-export --browser firefox --playlist "<url>"`.'
+    );
+  }
+
+  const browserName = normalizeBrowserName(
+    getConfigValue(args, "browser", "chrome")
+  );
+  const attachUrl =
+    getConfigValue(args, "attach-url") ||
+    (getConfigValue(args, "attach") ? "http://127.0.0.1:9222" : undefined);
+  const profileDir = path.resolve(
+    getConfigValue(
+      args,
+      "profile-dir",
+      path.join(process.cwd(), ".session", `yandex-${browserName}`)
+    )
+  );
+  const split = Boolean(getConfigValue(args, "split", false));
+  const maxLines = Number(getConfigValue(args, "max-lines", 500));
+  const splitOutDir = getConfigValue(args, "split-out-dir")
+    ? path.resolve(getConfigValue(args, "split-out-dir"))
+    : undefined;
+
+  let result;
+  let usedAttachMode = false;
+  if (attachUrl) {
+    usedAttachMode = true;
+    if (browserName === "firefox") {
+      throw new Error(
+        "Attach mode is supported only for Chrome/Edge-style Chromium browsers. Firefox should use the managed session mode or the F12 snippet fallback."
+      );
+    }
+
+    result = await exportYandexMusicPlaylistAttached({
+      playlistUrl,
+      outPath: getConfigValue(args, "out")
+        ? path.resolve(getConfigValue(args, "out"))
+        : undefined,
+      attachUrl,
+      split,
+      maxLines,
+      splitOutDir,
+    });
+  } else {
+    ensureDirectory(profileDir);
+
+    result = await exportYandexMusicPlaylist({
+      playlistUrl,
+      outPath: getConfigValue(args, "out")
+        ? path.resolve(getConfigValue(args, "out"))
+        : undefined,
+      profileDir,
+      browserName,
+      executablePath: getConfigValue(args, "executable-path")
+        ? path.resolve(getConfigValue(args, "executable-path"))
+        : undefined,
+      headless: Boolean(getConfigValue(args, "headless", false)),
+      split,
+      maxLines,
+      splitOutDir,
+    });
+  }
+
+  process.stdout.write(
+    JSON.stringify(
+      {
+        browser: result.browser,
+        playlistTitle: result.playlistTitle,
+        trackCount: result.trackCount,
+        outPath: result.outPath,
+        split: result.split,
+        sample: result.sample,
+      },
+      null,
+      2
+    ) + "\n"
+  );
+
+  return usedAttachMode;
 }
 
 async function runExport(args) {
@@ -93,7 +198,7 @@ async function runExport(args) {
   const { exportVkPlaylist, exportVkPlaylistAttached } = require("./lib/vk");
   const rawBrowserValue = getConfigValue(args, "browser");
   const playlistUrl =
-    getConfigValue(args, "playlist") ||
+    getStringConfigValue(args, "playlist") ||
     args._[0];
   if (!playlistUrl) {
     throw new Error("Missing --playlist <url>");
@@ -245,6 +350,10 @@ function runSpotifyLikeSnippet() {
   process.stdout.write(`${getSpotifyLikeSnippet()}\n`);
 }
 
+function runYandexSnippet() {
+  process.stdout.write(`${getYandexMusicExportSnippet()}\n`);
+}
+
 async function runSpotifyLikeAttach(args) {
   const { likeTracksInOpenSpotifyPlaylist, readSkippedTrackKeys } = require("./lib/spotify-web");
   const sourceReportPath = getConfigValue(args, "from-report")
@@ -310,7 +419,7 @@ async function runLikedSync(args) {
 async function runLikedSyncPlaylist(args) {
   const { syncLikedSongsFromPlaylist, DEFAULT_REDIRECT_URI } = require("./lib/spotify");
   const playlistUrl =
-    getConfigValue(args, "playlist") ||
+    getStringConfigValue(args, "playlist") ||
     args._[0] ||
     (() => {
       throw new Error("Missing --playlist <spotify-url|id>");
@@ -361,6 +470,14 @@ async function main() {
     return;
   }
 
+  if (command === "yandex-export") {
+    const usedAttachMode = await runYandexExport(args);
+    if (usedAttachMode) {
+      process.exit(0);
+    }
+    return;
+  }
+
   if (command === "validate") {
     runValidate(args);
     return;
@@ -383,6 +500,11 @@ async function main() {
 
   if (command === "snippet") {
     runSnippet();
+    return;
+  }
+
+  if (command === "yandex-snippet") {
+    runYandexSnippet();
     return;
   }
 

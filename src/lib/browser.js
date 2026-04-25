@@ -117,18 +117,26 @@ async function launchManagedContext({
   executablePath,
 }) {
   const normalizedBrowserName = normalizeBrowserName(browserName);
-  const resolvedExecutablePath = resolveExecutablePath(
-    normalizedBrowserName,
-    executablePath
-  );
   const definition = getBrowserDefinition(normalizedBrowserName);
   const launcher = definition.engine === "firefox" ? firefox : chromium;
-
-  return launcher.launchPersistentContext(profileDir, {
-    executablePath: resolvedExecutablePath,
+  const launchOptions = {
     headless,
     args: definition.engine === "chromium" ? ["--no-first-run"] : [],
-  });
+  };
+
+  if (executablePath) {
+    launchOptions.executablePath = resolveExecutablePath(
+      normalizedBrowserName,
+      executablePath
+    );
+  } else if (definition.engine === "chromium") {
+    launchOptions.channel =
+      normalizedBrowserName === "edge" ? "msedge" : "chrome";
+  } else {
+    launchOptions.executablePath = resolveExecutablePath(normalizedBrowserName);
+  }
+
+  return launcher.launchPersistentContext(profileDir, launchOptions);
 }
 
 async function connectToAttachedBrowser(attachUrl) {
