@@ -1,4 +1,4 @@
-# vkmusic-to-txt-playlist
+# vkmusic-yandexmusic-to-txt-playlist
 
 Tool for exporting music from VK Music into TXT and preparing it for Spotify transfer.
 

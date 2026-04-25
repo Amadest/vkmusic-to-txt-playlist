@@ -1,10 +1,10 @@
 {
-  "name": "vkmusic-to-txt-playlist",
+  "name": "vkmusic-yandexmusic-to-txt-playlist",
   "version": "0.1.0",
   "description": "Export VK Music playlists into TuneMyMusic-ready TXT files for Spotify import.",
   "license": "MIT",
   "bin": {
-    "vkmusic-to-txt-playlist": "./src/cli.js"
+    "vkmusic-yandexmusic-to-txt-playlist": "./src/cli.js"
   },
   "scripts": {
     "export": "node src/cli.js export",

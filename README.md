@@ -1,4 +1,4 @@
-# vkmusic-to-txt-playlist
+# vkmusic-yandexmusic-to-txt-playlist
 
 Инструмент для переноса музыки из VK и Яндекс.Музыки через TXT-плейлисты и для добивания избранного в Spotify браузерным скриптом.
 

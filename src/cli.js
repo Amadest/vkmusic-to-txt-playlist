@@ -79,7 +79,7 @@ function getStringConfigValue(args, key) {
 }
 
 function printUsage() {
-  process.stdout.write(`vkmusic-to-txt-playlist
+  process.stdout.write(`vkmusic-yandexmusic-to-txt-playlist
 
 Commands:
   export      --playlist <url|my-music> [--browser <chrome|edge|firefox>] [--attach] [--attach-url <url>] [--out <path>] [--profile-dir <path>] [--executable-path <path>] [--headless]
